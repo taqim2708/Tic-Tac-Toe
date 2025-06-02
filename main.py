@@ -173,7 +173,15 @@ def play_human() -> None:
 
 if __name__ == "__main__":
     # Step 1: Train the agent
-    train(900000)
+    train(30000)
+
+    agent_o = QLearningAgent("0")
+    agent_o.load_q_table()
+    print("Agent 0 length", len(agent_o.q))
+
+    agent_x = QLearningAgent("X")
+    agent_x.load_q_table()
+    print("Agent X length", len(agent_x.q))
 
     # Step 2: Let human play vs AI
     play_human()

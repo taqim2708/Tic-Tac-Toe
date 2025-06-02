@@ -108,7 +108,7 @@ def train(n_episodes: int = 50000) -> None:
     for episode in range(n_episodes):
         game.reset()
         agents = {"X": agent_x, "O": agent_o}
-        histories = {"X": [], "O": []}
+        histories: dict[str, list[tuple[str, int]]] = {"X": [], "O": []}
         turn = "X"
 
         while True:

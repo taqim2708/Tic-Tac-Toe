@@ -77,7 +77,7 @@ class QLearningAgent:
             pickle.dump(self.q, f)
 
     def get_q(self, state: str, action: int) -> float:
-        return self.q.get((state, action), 0.0)
+        return self.q.get((state, action), 0.5)
 
     def choose_action(self, game: TicTacToe) -> int:
         state = game.get_state()
@@ -91,7 +91,9 @@ class QLearningAgent:
         max_actions = [a for a, q in zip(actions, qs) if q == max_q]
         return random.choice(max_actions)
 
-    def learn(self, state: str, action: int, reward: float, next_state: str, done: bool) -> None:
+    def learn(
+        self, state: str, action: int, reward: float, next_state: str, done: bool
+    ) -> None:
         old_q = self.get_q(state, action)
         future_q = 0 if done else max([self.get_q(next_state, a) for a in range(9)])
         new_q = old_q + self.alpha * (reward + self.gamma * future_q - old_q)
@@ -105,34 +107,47 @@ def train(n_episodes: int = 50000) -> None:
 
     for episode in range(n_episodes):
         game.reset()
-        state = game.get_state()
         agents = {"X": agent_x, "O": agent_o}
+        histories = {"X": [], "O": []}
         turn = "X"
 
         while True:
             agent = agents[turn]
+            state = game.get_state()
             action = agent.choose_action(game)
             game.make_move(action, turn)
             next_state = game.get_state()
 
+            # Store the move history
+            histories[turn].append((state, action))
+
             if game.current_winner == turn:
-                agent.learn(state, action, 1, next_state, True)
-                agents["O" if turn == "X" else "X"].learn(
-                    state, action, -1, next_state, True
-                )
+                # Reward all moves made by the winner
+                for past_state, past_action in histories[turn]:
+                    agent.learn(past_state, past_action, 1, next_state, True)
+
+                # Penalize the opponent for losing early
+                total_moves = 9 - len(game.available_moves())
+                early_penalty = -1 * (1 + (6 - total_moves) * 0.2)
+
+                loser = "O" if turn == "X" else "X"
+                for past_state, past_action in histories[loser]:
+                    agents[loser].learn(
+                        past_state, past_action, early_penalty, next_state, True
+                    )
                 break
+
             elif game.is_draw():
-                agent.learn(state, action, 0.5, next_state, True)
-                agents["O" if turn == "X" else "X"].learn(
-                    state, action, 0.5, next_state, True
-                )
+                for p in ["X", "O"]:
+                    for past_state, past_action in histories[p]:
+                        agents[p].learn(past_state, past_action, 0.5, next_state, True)
                 break
+
             else:
                 agent.learn(state, action, 0, next_state, False)
-                state = next_state
                 turn = "O" if turn == "X" else "X"
 
-        if episode % 50000 == 0:
+        if episode % 5000 == 0:
             print(f"Episode {episode / 1000}k")
 
     agent_x.save_q_table()
@@ -145,35 +160,62 @@ def play_human() -> None:
     ai = QLearningAgent("O")
     game.print_board()
 
+    state = game.get_state()
+    last_ai_state = None
+    last_ai_action = None
+
     while True:
-        move = int(input("Your move (0-8): "))
+        try:
+            move = int(input("Your move (0-8): "))
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
+
         if game.make_move(move, "X"):
+            next_state = game.get_state()
+
             if game.current_winner:
-                game.print_board()
                 print("You win!")
+                if last_ai_state is not None and last_ai_action is not None:
+                    ai.learn(last_ai_state, last_ai_action, -1, next_state, True)
                 break
             elif game.is_draw():
-                game.print_board()
                 print("It's a draw!")
+                if last_ai_state is not None and last_ai_action is not None:
+                    ai.learn(last_ai_state, last_ai_action, 0.5, next_state, True)
                 break
 
-            ai_move = ai.choose_action(game)
-            game.make_move(ai_move, "O")
+            # AI move
+            ai_state = game.get_state()
+            ai_action = ai.choose_action(game)
+            game.make_move(ai_action, "O")
             game.print_board()
+            next_state = game.get_state()
+
+            # Learn from the last move (reward = 0 for now)
+            if last_ai_state is not None and last_ai_action is not None:
+                ai.learn(last_ai_state, last_ai_action, 0, ai_state, False)
+
+            last_ai_state = ai_state
+            last_ai_action = ai_action
 
             if game.current_winner:
                 print("AI wins!")
+                ai.learn(last_ai_state, last_ai_action, 1, next_state, True)
                 break
             elif game.is_draw():
                 print("It's a draw!")
+                ai.learn(last_ai_state, last_ai_action, 0.5, next_state, True)
                 break
         else:
             print("Invalid move.")
 
+    ai.save_q_table()
+
 
 if __name__ == "__main__":
     # Step 1: Train the agent
-    train(30000)
+    train(100000)
 
     agent_o = QLearningAgent("0")
     agent_o.load_q_table()
